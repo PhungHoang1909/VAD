@@ -1,1 +1,1 @@
-# VAD
+# Video anomaly detection model
