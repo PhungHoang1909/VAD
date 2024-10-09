@@ -3,6 +3,10 @@
 **ASTNetPlus** is an enhanced version of the ASTNet model, developed for video anomaly detection. This version integrates **ConvLSTM** for temporal modeling and **SE Block** for attention mechanisms, improving performance on challenging datasets like **Ped2** and **Avenue**.
 
 ---
+## 📝 Acknowledgments
+This project is based on the original **ASTNet** model:
+
+- **Paper**: [Attention-based Residual Autoencoder for Video Anomaly Detection](https://link.springer.com/article/10.1007/s10489-022-03613-1) by Viet-Tuan Le and Yong-Guk Kim, published in *Applied Intelligence*, 2023.
 
 ## 📂 Datasets
 The following datasets were used for training and evaluation:
