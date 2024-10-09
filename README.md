@@ -5,8 +5,8 @@ ASTNetPlus is an enhanced version of the ASTNet model, developed for video anoma
 ## Datasets
 I use the following datasets for training and evaluation:
 
-- **UCSD Ped2 Dataset**: [Download UCSD Ped2](https://www.svcl.ucsd.edu/projects/anomaly/dataset.htm#ped2](http://www.svcl.ucsd.edu/projects/anomaly/dataset.html)
-- **CUHK Avenue Dataset**: [Download CUHK Avenue](http://www.cse.cuhk.edu.hk/leojia/projects/detectabnormal/dataset.html](http://www.cse.cuhk.edu.hk/leojia/projects/detectabnormal/dataset.html)
+- **UCSD Ped2 Dataset**: [Download UCSD Ped2]((https://www.svcl.ucsd.edu/projects/anomaly/dataset.htm#ped2](http://www.svcl.ucsd.edu/projects/anomaly/dataset.html))
+- **CUHK Avenue Dataset**: [Download CUHK Avenue]((http://www.cse.cuhk.edu.hk/leojia/projects/detectabnormal/dataset.html](http://www.cse.cuhk.edu.hk/leojia/projects/detectabnormal/dataset.html))
 
 ## Pretrained Model
 The backbone of our model uses **WiderResNet38**, pretrained on ImageNet. You can download the pretrained weights from the Internet
