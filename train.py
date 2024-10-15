@@ -3,9 +3,6 @@ import pprint
 import argparse
 import torch.backends.cudnn as cudnn
 
-from torch.cuda.amp import autocast, GradScaler
-
-
 import torch
 import torch.nn as nn
 
@@ -15,9 +12,6 @@ import models as models
 from models.wresnet1024 import ASTNet as get_net1
 from models.wresnet2048 import ASTNet as get_net2
 import datasets
-
-from torch.cuda.amp import autocast, GradScaler
-import gc
 
 
 def parse_args():
@@ -50,31 +44,29 @@ def main():
     cudnn.determinstic = config.CUDNN.DETERMINISTIC
     cudnn.enabled = config.CUDNN.ENABLED
 
-    model = get_net2(config)
-    model = model.cuda()
+    if config.DATASET.DATASET == "ped2":
+        model = get_net1(config)
+    else:
+        model = get_net2(config)
 
-    if hasattr(model, 'enable_gradient_checkpointing'):
-        model.enable_gradient_checkpointing()
-
-    losses = loss_util.MultiLossFunction(config=config).cuda()
-    optimizer = optimizer_util.get_optimizer(config, model)
-    scheduler = optimizer_util.get_scheduler(config, optimizer)
+    logger.info('Model: {}'.format(model.get_name()))
 
     gpus = list(config.GPUS)
     model = nn.DataParallel(model, device_ids=gpus).cuda()
 
     losses = loss_util.MultiLossFunction(config=config).cuda()
+
     optimizer = optimizer_util.get_optimizer(config, model)
+
     scheduler = optimizer_util.get_scheduler(config, optimizer)
 
-    
     train_dataset = eval('datasets.get_data')(config)
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=config.TRAIN.BATCH_SIZE_PER_GPU * len(gpus),
         shuffle=config.TRAIN.SHUFFLE,
-        num_workers=2,
+        num_workers=config.WORKERS,
         pin_memory=True,
         drop_last=True
     )
@@ -97,62 +89,38 @@ def main():
 
 def train(config, train_loader, model, loss_functions, optimizer, epoch, logger):
     loss_func_mse = nn.MSELoss(reduction='none')
+
     model.train()
-    scaler = GradScaler()
-
-    accumulation_steps = 4  # Adjust this value as needed
-
 
     for i, data in enumerate(train_loader):
+        # decode input
         inputs, target = train_util.decode_input(input=data, train=True)
+        output = model(inputs)
+
+        # compute loss
         target = target.cuda(non_blocking=True)
+        inte_loss, grad_loss, msssim_loss, l2_loss = loss_functions(output, target)
+        loss = inte_loss + grad_loss + msssim_loss + l2_loss
 
-        # Clear cache
-        torch.cuda.empty_cache()
-        gc.collect()
+        # compute PSNR
+        mse_imgs = torch.mean(loss_func_mse((output + 1) / 2, (target + 1) / 2)).item()
+        psnr = anomaly_util.psnr_park(mse_imgs)
 
-        with autocast():
-            output = model(inputs)
-            inte_loss, grad_loss, msssim_loss, l2_loss = loss_functions(output, target)
-            loss = inte_loss + grad_loss + msssim_loss + l2_loss
+        # optimize
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-        loss = loss / accumulation_steps
-        scaler.scale(loss).backward()
-
-        if (i + 1) % accumulation_steps == 0:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad(set_to_none=True)
-
-        # Compute PSNR
-        with torch.no_grad():
-            mse_imgs = torch.mean(loss_func_mse((output + 1) / 2, (target + 1) / 2)).item()
-            psnr = anomaly_util.psnr_park(mse_imgs)
-
+        cur_lr = optimizer.param_groups[0]['lr']
         if (i + 1) % config.PRINT_FREQ == 0:
             msg = 'Epoch: [{0}][{1}/{2}]\t' \
                   'Lr {lr:.6f}\t' \
                   '[inte {inte:.5f} + grad {grad:.4f} + msssim {msssim:.4f} + L2 {l2:.4f}]\t' \
                   'PSNR {psnr:.2f}'.format(epoch+1, i+1, len(train_loader),
-                                             lr=optimizer.param_groups[0]['lr'],
-                                             inte=inte_loss.item(), grad=grad_loss.item(), 
-                                             msssim=msssim_loss.item(), l2=l2_loss.item(),
+                                             lr=cur_lr,
+                                             inte=inte_loss, grad=grad_loss, msssim=msssim_loss, l2=l2_loss,
                                              psnr=psnr)
             logger.info(msg)
-
-        # Clear unnecessary tensors
-        del inputs, target, output, loss
-        torch.cuda.empty_cache()
-
-    # Final optimization step for remaining accumulated gradients
-    if len(train_loader) % accumulation_steps != 0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
 
 
 if __name__ == '__main__':
